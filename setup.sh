@@ -9,10 +9,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
 read -rsp "Storage Box Passwort: " STORAGE_BOX_PASS
 echo
 
+if [[ -z "${STORAGE_BOX_PASS}" ]]; then
+  echo "FEHLER: Storage Box Passwort darf nicht leer sein." >&2
+  exit 1
+fi
+
 echo "### 1. System aktualisieren und Tools installieren ###"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update && apt-get upgrade -y
-apt-get install -y curl cifs-utils wget ufw jq fail2ban \
+apt-get install -y curl cifs-utils keyutils wget ufw jq fail2ban \
     linux-modules-extra-"$(uname -r)"
 
 # rclone direkt von rclone.org – apt-Version ist zu alt für pCloud OAuth
@@ -80,13 +85,16 @@ mkdir -p /mnt/storagebox
 modprobe cifs
 
 # Zugangsdaten sicher speichern
-echo "username=${STORAGE_BOX_USER}" > /etc/storagebox_creds
-echo "password=${STORAGE_BOX_PASS}" >> /etc/storagebox_creds
+{
+  printf 'username=%s\n' "${STORAGE_BOX_USER}"
+  printf 'password=%s\n' "${STORAGE_BOX_PASS}"
+} > /etc/storagebox_creds
 chmod 600 /etc/storagebox_creds
 
 # fstab Eintrag erstellen falls nicht vorhanden
 if ! grep -q "/mnt/storagebox" /etc/fstab; then
-    echo "//${STORAGE_BOX_HOST}/backup /mnt/storagebox cifs credentials=/etc/storagebox_creds,iocharset=utf8,uid=0,gid=0,file_mode=0777,dir_mode=0777,nofail,_netdev 0 0" >> /etc/fstab
+  # x-systemd.automount vermeidet Boot-Race: Zugriff auf den Pfad triggert Mount bei Bedarf.
+  echo "//${STORAGE_BOX_HOST}/backup /mnt/storagebox cifs credentials=/etc/storagebox_creds,uid=0,gid=0,file_mode=0777,dir_mode=0777,nofail,_netdev,x-systemd.automount,x-systemd.requires=network-online.target,x-systemd.after=network-online.target,vers=3.0,sec=ntlmssp 0 0" >> /etc/fstab
 fi
 
 # Nur mounten, wenn nicht bereits gemountet
