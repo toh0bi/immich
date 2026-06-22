@@ -29,10 +29,11 @@ Das Setup arbeitet mit:
 | `config.example.sh` | **Vorlage** für die lokale Konfiguration |
 | `config.sh` | **Lokale Konfiguration** – wird nicht ins Repo eingecheckt |
 | `backup_db.sh` | PostgreSQL-Dump → Storage Box (täglich per Cron) |
-| `sync_pcloud.sh` | rclone Sync Storage Box → pCloud (wöchentlich per Cron) |
+| `sync_pcloud.sh` | rclone Sync Storage Box → pCloud (täglich per Cron) |
 | `check_logs.sh` | Fehler-Scan mit Regex-Klassifizierung und ntfy-Alert nur bei Handlungsbedarf |
 | `sys_report.sh` | Statusbericht via ntfy (sonntags um 03:00 Uhr) |
 | `update.sh` | Immich-Update ohne Downtime-Unterbrechung |
+| `update_os.sh` | `apt upgrade` mit ntfy-Alert bei Reboot-Bedarf (sonntags per Cron) |
 
 ---
 
@@ -219,6 +220,9 @@ crontab -e
 
 # Statusbericht nur sonntags um 03:00 Uhr
 0 3 * * 0 /bin/bash /opt/immich/sys_report.sh
+
+# OS-Updates sonntags um 04:00 Uhr (ntfy-Alert bei Reboot-Bedarf oder Fehler)
+0 4 * * 0 /bin/bash /opt/immich/update_os.sh >> /var/log/immich/update_os.log 2>&1
 ```
 
 ---
@@ -244,6 +248,41 @@ Wenn nur harmlose Client-Abbrueche oder aehnliche Bagatellen erkannt werden, wir
 
 ---
 
+## Troubleshooting: 502 nach Reboot
+
+Symptom in Immich-Logs:
+- `Failed to read (/usr/src/app/upload/encoded-video/.immich)`
+- Web-UI zeigt `502`
+
+Typische Ursache:
+- Storage Box war beim Boot noch nicht gemountet.
+- Docker startet dann mit leerem lokalem Host-Pfad unter `/mnt/storagebox/immich_library`.
+
+Sonderfall bei `mount error(79)`:
+- In `dmesg` steht `CIFS mount error: iocharset utf8 not found`.
+- Dann die Option `iocharset=utf8` aus dem fstab-Eintrag entfernen und erneut mounten.
+
+Sofort-Fix auf dem Server:
+
+```bash
+sudo mount -a
+mountpoint -q /mnt/storagebox || { echo "Storage Box nicht gemountet"; exit 1; }
+
+sudo mkdir -p /mnt/storagebox/immich_library/{upload,backups,library,profile,encoded-video}
+for d in upload backups library profile encoded-video; do
+  sudo touch "/mnt/storagebox/immich_library/${d}/.immich"
+done
+sudo touch /opt/immich/data/thumbs/.immich
+
+cd /opt/immich
+sudo docker compose up -d
+```
+
+Hinweis:
+- `setup.sh` schreibt den fstab-Eintrag mit `x-systemd.automount`, damit der Mount bei Zugriff automatisch und robuster erfolgt.
+
+---
+
 ## Immich aktualisieren
 
 ```bash
@@ -261,7 +300,7 @@ also mit minimaler Unterbrechung. Vor und nach dem Update kommt eine ntfy-Benach
 |---|---|---|
 | Live | `/mnt/storagebox/immich_library/` | – (Primär) |
 | DB-Backup | `/mnt/storagebox/immich_db_backups/` | `backup_db.sh` (täglich) |
-| Off-Site | `pcloud:ImmichBackup/` | `sync_pcloud.sh` (wöchentlich) |
+| Off-Site | `pcloud:ImmichBackup/` | `sync_pcloud.sh` (täglich) |
 
 > Die Foto-Library selbst liegt bereits auf der Storage Box (externe Kopie).  
 > Für vollständige Datensicherheit empfiehlt sich zusätzlich ein Snapshot  
