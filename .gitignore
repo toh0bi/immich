@@ -1,0 +1,9 @@
+# Persönliche Verbindungsdaten – nie ins Repo!
+README_Connect.md
+config.sh
+
+# Secrets die lokal erzeugt werden
+.env
+*.sql.gz
+__pycache__/
+*.pyc
