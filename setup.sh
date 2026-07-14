@@ -129,6 +129,8 @@ curl -L https://github.com/immich-app/immich/releases/latest/download/example.en
 # Upload-Root auf Storage Box, Thumbs werden separat auf SSD eingebunden.
 sed -i 's|UPLOAD_LOCATION=.*|UPLOAD_LOCATION=/mnt/storagebox/immich_library|' .env
 sed -i 's|DB_DATA_LOCATION=.*|DB_DATA_LOCATION=./postgres|' .env
+# v3-Major-Tag erzwingen, damit kein versehentlicher Downgrade/Alt-Tag genutzt wird.
+sed -i 's|^IMMICH_VERSION=.*|IMMICH_VERSION=v3|' .env
 
 JWT_SECRET=$(openssl rand -base64 32)
 sed -i "s|JWT_SECRET=.*|JWT_SECRET=${JWT_SECRET}|" .env
@@ -183,7 +185,7 @@ services:
 
   database:
     container_name: immich_postgres
-    image: docker.io/tensorchord/pgvecto-rs:pg14-v0.2.0
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
     environment:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_USER: ${DB_USERNAME}
