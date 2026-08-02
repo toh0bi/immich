@@ -7,3 +7,5 @@ config.sh
 *.sql.gz
 __pycache__/
 *.pyc
+
+*.code-workspace

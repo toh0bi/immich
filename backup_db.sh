@@ -16,6 +16,7 @@ trap 'ntfy_send "[ALARM] DB-Backup fehlgeschlagen" \
 # shellcheck source=/dev/null
 source "${IMMICH_DIR}/.env"
 DB_USER="${DB_USERNAME:-postgres}"
+DB_NAME="${DB_DATABASE_NAME:-immich}"
 
 # --- Voraussetzungen prüfen ----------------------------------
 if ! mountpoint -q "${STORAGEBOX_MOUNT}"; then
@@ -27,7 +28,11 @@ mkdir -p "${BACKUP_DIR}"
 
 # --- Backup erstellen ----------------------------------------
 echo "Erstelle DB-Backup: ${BACKUP_FILE}"
-docker exec -t immich_postgres pg_dumpall -c -U "${DB_USER}" | gzip > "${BACKUP_FILE}"
+docker exec -t immich_postgres pg_dump \
+    --clean \
+    --if-exists \
+    --dbname="${DB_NAME}" \
+    --username="${DB_USER}" | gzip > "${BACKUP_FILE}"
 
 # --- Alte Backups aufräumen (>30 Tage) -----------------------
 find "${BACKUP_DIR}" -type f -name "immich_db_*.sql.gz" -mtime +30 -delete

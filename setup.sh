@@ -103,9 +103,9 @@ if ! mountpoint -q /mnt/storagebox; then
 fi
 
 # Ordnerstruktur auf Storage Box anlegen
-# Immich-Upload-Root liegt auf der Storage Box, nur thumbs liegen auf SSD.
+# Immich-Upload-Root liegt auf der Storage Box, inkl. native DB-Dumps in backups/.
+# Nur thumbs liegen auf SSD.
 mkdir -p /mnt/storagebox/immich_library
-mkdir -p /mnt/storagebox/immich_db_backups
 mkdir -p /mnt/storagebox/takeout
 
 # Lokaler SSD-Pfad fuer Thumbnails

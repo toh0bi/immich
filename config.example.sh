@@ -22,13 +22,14 @@ NTFY_MARKDOWN="yes"                      # Markdown-Rendering in ntfy explizit a
 # --- Pfade ---------------------------------------------------
 IMMICH_DIR="/opt/immich"
 STORAGEBOX_MOUNT="/mnt/storagebox"
-BACKUP_DIR="${STORAGEBOX_MOUNT}/immich_db_backups"
-PCLOUD_REMOTE="pcloud:ImmichBackup/library"
-# Originaldateien liegen in diesem Setup unter upload/.
-# thumbs/, encoded-video/ sind regenerierbar und muessen NICHT gesichert werden.
-PCLOUD_SOURCE="${STORAGEBOX_MOUNT}/immich_library/upload"
-PCLOUD_DB_REMOTE="pcloud:ImmichBackup/db_backups"
-# DB-Backups werden per copy (nicht sync!) übertragen – niemals remote löschen.
+# Native Immich-Dumps liegen in ${UPLOAD_LOCATION}/backups.
+# Quelle fuer Off-Site ist das gesamte Immich-Verzeichnis auf der Storage Box.
+BACKUP_DIR="${STORAGEBOX_MOUNT}/immich_library/backups"
+PCLOUD_BACKUP_SOURCE="${STORAGEBOX_MOUNT}/immich_library"
+PCLOUD_BACKUP_CURRENT_REMOTE="pcloud:ImmichBackup/current"
+PCLOUD_BACKUP_HISTORY_REMOTE="pcloud:ImmichBackup/history"
+RETENTION_DAILY_DAYS="30"            # tägliche Medien-Stände in history/
+RETENTION_MONTHLY_MONTHS="12"        # Monatsstände (Tag 01) zusätzlich behalten
 LOG_DIR="/var/log/immich"
 PCLOUD_LOG="${LOG_DIR}/pcloud_sync.log"
 MONTHLY_REPORT_LOG="${LOG_DIR}/monthly_reports.log"

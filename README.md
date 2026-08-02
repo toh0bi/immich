@@ -19,6 +19,11 @@ Das Setup arbeitet mit:
 - **ntfy** für alle Benachrichtigungen (kein Mail-Server nötig)
 - **Regex-basierter Klassifizierer (Bash-only)** zur Unterdrückung von Bagatellen
 
+RPO/RTO-Zielwerte in diesem Setup:
+- **RPO DB:** 6 Stunden
+- **RPO Medien:** 6 Stunden
+- **RTO:** 2-8 Stunden (abhängig von Datenmenge und Leitung)
+
 ---
 
 ## Dateiübersicht
@@ -28,8 +33,8 @@ Das Setup arbeitet mit:
 | `setup.sh` | **Einmalig** ausführen – richtet den Server komplett ein |
 | `config.example.sh` | **Vorlage** für die lokale Konfiguration |
 | `config.sh` | **Lokale Konfiguration** – wird nicht ins Repo eingecheckt |
-| `backup_db.sh` | PostgreSQL-Dump → Storage Box (täglich per Cron) |
-| `sync_pcloud.sh` | rclone Sync Storage Box → pCloud (täglich per Cron) |
+| `backup_db.sh` | Optionaler manueller PostgreSQL-Dump (Fallback) |
+| `sync_pcloud.sh` | rclone Sync des kompletten Immich-Backup-Verzeichnisses nach pCloud |
 | `check_logs.sh` | Fehler-Scan mit Regex-Klassifizierung und ntfy-Alert nur bei Handlungsbedarf |
 | `sys_report.sh` | Statusbericht via ntfy (sonntags um 03:00 Uhr) |
 | `update.sh` | Immich-Update ohne Downtime-Unterbrechung |
@@ -209,14 +214,14 @@ crontab -e
 ```
 
 ```cron
-# DB-Backup täglich um 01:00 Uhr
-0 1 * * * /bin/bash /opt/immich/backup_db.sh >> /var/log/immich/backup.log 2>&1
+# DB-Backups per Immich nativ planen:
+# Administration -> Settings -> Backup (z.B. alle 6h, passende Retention)
 
 # Log-Check alle 10 Minuten (ntfy-Alert bei Fehlern)
 */10 * * * * /bin/bash /opt/immich/check_logs.sh
 
-# pCloud-Sync täglich um 01:30 Uhr
-30 1 * * * /bin/bash /opt/immich/sync_pcloud.sh
+# pCloud-Sync alle 6 Stunden
+20 */6 * * * /bin/bash /opt/immich/sync_pcloud.sh
 
 # Statusbericht nur sonntags um 03:00 Uhr
 0 3 * * 0 /bin/bash /opt/immich/sys_report.sh
@@ -224,6 +229,48 @@ crontab -e
 # OS-Updates sonntags um 04:00 Uhr (ntfy-Alert bei Reboot-Bedarf oder Fehler)
 0 4 * * 0 /bin/bash /opt/immich/update_os.sh >> /var/log/immich/update_os.log 2>&1
 ```
+
+---
+
+## Backup-Logik mit rclone (sync + backup-dir)
+
+`sync_pcloud.sh` sichert **einmalig das gesamte Immich-Backup-Verzeichnis** (`UPLOAD_LOCATION`):
+
+- **Current:** `rclone sync` nach `pcloud:ImmichBackup/current`
+- **History:** geänderte/gelöschte Dateien werden via `--backup-dir` in
+  `pcloud:ImmichBackup/history/<timestamp>` verschoben
+
+Damit sind **Assets und native Immich-DB-Dumps (`backups/`)** in einem Lauf enthalten.
+
+Retention in `history/`:
+- tägliche Stände: 30 Tage
+- Monatsstände (Tag `01`): 12 Monate
+
+Konfiguration in `config.sh`:
+
+```bash
+BACKUP_DIR="/mnt/storagebox/immich_library/backups"
+PCLOUD_BACKUP_SOURCE="/mnt/storagebox/immich_library"
+PCLOUD_BACKUP_CURRENT_REMOTE="pcloud:ImmichBackup/current"
+PCLOUD_BACKUP_HISTORY_REMOTE="pcloud:ImmichBackup/history"
+RETENTION_DAILY_DAYS="30"
+RETENTION_MONTHLY_MONTHS="12"
+```
+
+---
+
+## Restore-Kurzablauf
+
+1. **Medien wiederherstellen**
+  - letzter Stand: aus `current`
+  - älterer Stand: benötigte Dateien aus `history/<timestamp>`
+2. **DB-Dump wiederherstellen**
+  - bevorzugt über Immich-UI: `Administration -> Maintenance -> Restore database backup`
+  - alternativ per CLI gemäß offizieller Immich-Doku
+3. **Validieren**
+  - Admin-Login, zufällige Assets, Alben, Personen, Freigaben prüfen
+
+Empfehlung: monatlicher Restore-Drill auf Testinstanz.
 
 ---
 
@@ -299,8 +346,8 @@ also mit minimaler Unterbrechung. Vor und nach dem Update kommt eine ntfy-Benach
 | Kopie | Ort | Skript |
 |---|---|---|
 | Live | `/mnt/storagebox/immich_library/` | – (Primär) |
-| DB-Backup | `/mnt/storagebox/immich_db_backups/` | `backup_db.sh` (täglich) |
-| Off-Site | `pcloud:ImmichBackup/` | `sync_pcloud.sh` (täglich) |
+| DB-Backup (nativ) | `/mnt/storagebox/immich_library/backups/` | Immich Backup Scheduler |
+| Off-Site (current + history) | `pcloud:ImmichBackup/current` + `pcloud:ImmichBackup/history/` | `sync_pcloud.sh` (alle 6h) |
 
 > Die Foto-Library selbst liegt bereits auf der Storage Box (externe Kopie).  
 > Für vollständige Datensicherheit empfiehlt sich zusätzlich ein Snapshot  

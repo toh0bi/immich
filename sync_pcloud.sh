@@ -6,6 +6,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
 
 mkdir -p "${LOG_DIR}"
 
+RUN_ID=$(date +%Y%m%d_%H%M%S)
+CURRENT_REMOTE="${PCLOUD_BACKUP_CURRENT_REMOTE}"
+HISTORY_BASE_REMOTE="${PCLOUD_BACKUP_HISTORY_REMOTE}"
+RUN_HISTORY_REMOTE="${HISTORY_BASE_REMOTE}/${RUN_ID}"
+
 # --- Fehlerbehandlung via Trap --------------------------------
 trap 'ntfy_send "[ALARM] pCloud-Sync fehlgeschlagen" \
     "rclone-Sync auf ${SERVER_NAME} ist fehlgeschlagen (Exit: $?)."$'"'"'\n'"'"'"Details: ${PCLOUD_LOG}" \
@@ -24,25 +29,59 @@ fi
 
 echo "### Start pCloud Sync: $(date) ###" >> "${PCLOUD_LOG}"
 
-# 1) Originaldateien: sync = 1:1-Spiegelung.
-#    Löscht bei pCloud, wenn Datei in Immich gelöscht wird.
-#    Für rein additives Backup stattdessen "copy" verwenden.
-echo "  -> Originale: ${PCLOUD_SOURCE} → ${PCLOUD_REMOTE}" >> "${PCLOUD_LOG}"
-rclone sync "${PCLOUD_SOURCE}" "${PCLOUD_REMOTE}" \
+# 1) Komplettes Immich-Backup-Verzeichnis syncen (inkl. backups/).
+#    current spiegelt den aktuellen Stand.
+#    Überschriebene/gelöschte Dateien werden nach history/<timestamp> verschoben.
+echo "  -> Backup-Dir: ${PCLOUD_BACKUP_SOURCE} → ${CURRENT_REMOTE} (history: ${RUN_HISTORY_REMOTE})" >> "${PCLOUD_LOG}"
+rclone sync "${PCLOUD_BACKUP_SOURCE}" "${CURRENT_REMOTE}" \
+    --backup-dir "${RUN_HISTORY_REMOTE}" \
     --fast-list \
     --transfers 4 \
     --checkers 8 \
     --log-file="${PCLOUD_LOG}" \
     --log-level INFO
 
-# 2) DB-Backups: copy (niemals remote löschen!)
-#    Lokale Rotation (30 Tage) läuft in backup_db.sh – pCloud behält alles.
-echo "  -> DB-Backups: ${BACKUP_DIR} → ${PCLOUD_DB_REMOTE}" >> "${PCLOUD_LOG}"
-rclone copy "${BACKUP_DIR}" "${PCLOUD_DB_REMOTE}" \
-    --fast-list \
-    --transfers 2 \
-    --log-file="${PCLOUD_LOG}" \
-    --log-level INFO
+# 1b) Retention auf history anwenden:
+#     - tägliche Stände fuer RETENTION_DAILY_DAYS
+#     - Monatsstände (Tag 01) fuer RETENTION_MONTHLY_MONTHS
+cleanup_history() {
+    local cutoff
+    local current_year current_month
+
+    cutoff=$(date -d "-${RETENTION_DAILY_DAYS} days" +%Y%m%d_%H%M%S)
+    current_year=$(date +%Y)
+    current_month=$(date +%m)
+
+    while IFS= read -r dir; do
+        local snapshot_id snapshot_day snapshot_year snapshot_month
+        local months_diff
+
+        snapshot_id="${dir%/}"
+        [[ "${snapshot_id}" =~ ^[0-9]{8}_[0-9]{6}$ ]] || continue
+
+        # Zu jung: immer behalten.
+        if [[ "${snapshot_id}" > "${cutoff}" ]]; then
+            continue
+        fi
+
+        snapshot_day="${snapshot_id:6:2}"
+        if [[ "${snapshot_day}" == "01" ]]; then
+            snapshot_year="${snapshot_id:0:4}"
+            snapshot_month="${snapshot_id:4:2}"
+            months_diff=$(( (10#${current_year} - 10#${snapshot_year}) * 12 + (10#${current_month} - 10#${snapshot_month}) ))
+            if (( months_diff < RETENTION_MONTHLY_MONTHS )); then
+                continue
+            fi
+        fi
+
+        echo "  -> Retention: entferne history/${snapshot_id}" >> "${PCLOUD_LOG}"
+        rclone purge "${HISTORY_BASE_REMOTE}/${snapshot_id}" \
+            --log-file="${PCLOUD_LOG}" \
+            --log-level INFO
+    done < <(rclone lsf "${HISTORY_BASE_REMOTE}" --dirs)
+}
+
+cleanup_history
 
 echo "### Ende pCloud Sync: $(date) ###" >> "${PCLOUD_LOG}"
 
@@ -50,64 +89,35 @@ RUN_LOG=$(sed -n "$((START_LINE + 1)),\$p" "${PCLOUD_LOG}")
 
 extract_metric() {
     local section_start="$1"
-    local section_end="$2"
-    local pattern="$3"
+    local pattern="$2"
 
-    awk -v start="${section_start}" -v end="${section_end}" -v pat="${pattern}" '
+    awk -v start="${section_start}" -v pat="${pattern}" '
         $0 ~ start {in_section=1; next}
-        $0 ~ end {if (in_section) in_section=0}
+        /^### Ende pCloud Sync:/ {if (in_section) in_section=0}
         in_section && $0 ~ pat {line=$0}
         END {print line}
     ' <<< "${RUN_LOG}"
 }
 
-ORIG_TRANSFERRED=$(extract_metric "^  -> Originale:" "^  -> DB-Backups:" "^Transferred:")
-ORIG_CHECKS=$(extract_metric "^  -> Originale:" "^  -> DB-Backups:" "^Checks:")
-ORIG_DELETED=$(extract_metric "^  -> Originale:" "^  -> DB-Backups:" "^Deleted:")
-ORIG_ELAPSED=$(extract_metric "^  -> Originale:" "^  -> DB-Backups:" "^Elapsed time:")
-
-DB_TRANSFERRED=$(awk '
-    /^  -> DB-Backups:/ {in_section=1; next}
-    in_section && /^Transferred:/ {line=$0}
-    END {print line}
-' <<< "${RUN_LOG}")
-DB_CHECKS=$(awk '
-    /^  -> DB-Backups:/ {in_section=1; next}
-    in_section && /^Checks:/ {line=$0}
-    END {print line}
-' <<< "${RUN_LOG}")
-DB_ELAPSED=$(awk '
-    /^  -> DB-Backups:/ {in_section=1; next}
-    in_section && /^Elapsed time:/ {line=$0}
-    END {print line}
-' <<< "${RUN_LOG}")
+SYNC_TRANSFERRED=$(extract_metric "^  -> Backup-Dir:" "^Transferred:")
+SYNC_CHECKS=$(extract_metric "^  -> Backup-Dir:" "^Checks:")
+SYNC_DELETED=$(extract_metric "^  -> Backup-Dir:" "^Deleted:")
+SYNC_ELAPSED=$(extract_metric "^  -> Backup-Dir:" "^Elapsed time:")
 
 SUCCESS_MESSAGE="pCloud-Sync auf ${SERVER_NAME} erfolgreich abgeschlossen."
 
-if [[ -n "${ORIG_TRANSFERRED}${ORIG_CHECKS}${ORIG_DELETED}${ORIG_ELAPSED}" ]]; then
+if [[ -n "${SYNC_TRANSFERRED}${SYNC_CHECKS}${SYNC_DELETED}${SYNC_ELAPSED}" ]]; then
     SUCCESS_MESSAGE="${SUCCESS_MESSAGE}
 
-Originale:"
-    [[ -n "${ORIG_TRANSFERRED}" ]] && SUCCESS_MESSAGE="${SUCCESS_MESSAGE}
-${ORIG_TRANSFERRED}"
-    [[ -n "${ORIG_CHECKS}" ]] && SUCCESS_MESSAGE="${SUCCESS_MESSAGE}
-${ORIG_CHECKS}"
-    [[ -n "${ORIG_DELETED}" ]] && SUCCESS_MESSAGE="${SUCCESS_MESSAGE}
-${ORIG_DELETED}"
-    [[ -n "${ORIG_ELAPSED}" ]] && SUCCESS_MESSAGE="${SUCCESS_MESSAGE}
-${ORIG_ELAPSED}"
-fi
-
-if [[ -n "${DB_TRANSFERRED}${DB_CHECKS}${DB_ELAPSED}" ]]; then
-    SUCCESS_MESSAGE="${SUCCESS_MESSAGE}
-
-DB-Backups:"
-    [[ -n "${DB_TRANSFERRED}" ]] && SUCCESS_MESSAGE="${SUCCESS_MESSAGE}
-${DB_TRANSFERRED}"
-    [[ -n "${DB_CHECKS}" ]] && SUCCESS_MESSAGE="${SUCCESS_MESSAGE}
-${DB_CHECKS}"
-    [[ -n "${DB_ELAPSED}" ]] && SUCCESS_MESSAGE="${SUCCESS_MESSAGE}
-${DB_ELAPSED}"
+Backup-Dir:"
+    [[ -n "${SYNC_TRANSFERRED}" ]] && SUCCESS_MESSAGE="${SUCCESS_MESSAGE}
+${SYNC_TRANSFERRED}"
+    [[ -n "${SYNC_CHECKS}" ]] && SUCCESS_MESSAGE="${SUCCESS_MESSAGE}
+${SYNC_CHECKS}"
+    [[ -n "${SYNC_DELETED}" ]] && SUCCESS_MESSAGE="${SUCCESS_MESSAGE}
+${SYNC_DELETED}"
+    [[ -n "${SYNC_ELAPSED}" ]] && SUCCESS_MESSAGE="${SUCCESS_MESSAGE}
+${SYNC_ELAPSED}"
 fi
 
 SUCCESS_MESSAGE="${SUCCESS_MESSAGE}
