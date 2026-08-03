@@ -5,6 +5,8 @@
 # Cron-Empfehlung:
 #   */10 * * * * /bin/bash /opt/immich/check_logs.sh
 
+# shellcheck source=../config.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../config.sh"
 # shellcheck source=config.sh
 source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
 

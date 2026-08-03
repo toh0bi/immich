@@ -1,0 +1,15 @@
+#!/bin/bash
+# =============================================================
+# SilverBullet – eigene Konfiguration (getrennt von Immich!)
+# Diese Datei nach silverbullet/config.sh kopieren und anpassen.
+# config.sh wird NICHT ins Repo eingecheckt.
+# =============================================================
+
+# Domain, unter der SilverBullet erreichbar sein soll
+SB_DOMAIN="sb.tsued.de"
+
+# Login-Credentials im Format user:passwort (Single-Space-Modus)
+SB_USER="<user>:<passwort>"
+
+# Pfad zum Space-Verzeichnis (Markdown-Dateien) auf dem Host
+SB_SPACE_DIR="/opt/silverbullet/space"

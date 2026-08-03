@@ -1,6 +1,8 @@
 # Persönliche Verbindungsdaten – nie ins Repo!
 README_Connect.md
 config.sh
+immich/config.sh
+silverbullet/config.sh
 
 # Secrets die lokal erzeugt werden
 .env

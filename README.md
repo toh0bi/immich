@@ -5,9 +5,11 @@ Es deckt Setup, Backups, pCloud-Sync, Log-Checks und Statusmeldungen ab.
 
 ## Schnellstart
 
-1. `config.example.sh` nach `config.sh` kopieren und lokal anpassen.
-2. Die Skripte nach `/opt/immich/` auf den Server kopieren.
-3. `setup.sh` auf dem Server ausführen.
+1. `config.example.sh` nach `config.sh` kopieren und anpassen.
+2. `immich/config.example.sh` nach `immich/config.sh` kopieren und anpassen.
+3. `silverbullet/config.example.sh` nach `silverbullet/config.sh` kopieren und anpassen.
+4. Alle Dateien auf den Server kopieren (siehe unten).
+5. `setup.sh` auf dem Server ausführen.
 
 Das Setup arbeitet mit:
 
@@ -28,17 +30,48 @@ RPO/RTO-Zielwerte in diesem Setup:
 
 ## Dateiübersicht
 
-| Datei | Beschreibung |
+**Server-Layout nach dem Deployment:**
+```
+/opt/
+├── config.sh                  ← gemeinsame Server-Config (ADMIN_USER, NTFY, Storage Box)
+├── setup.sh                   ← einmaliges Basis-Setup (frischer VPS)
+├── immich/                    ← Immich-Skripte + App-Daten
+│   ├── config.sh              ← Immich-eigene Config (IMMICH_DOMAIN, Backup-/pCloud-Pfade)
+│   ├── docker-compose.yml, .env, postgres/, data/thumbs/
+│   ├── backup_db.sh, check_logs.sh, sync_pcloud.sh
+│   ├── sys_report.sh, update.sh, update_os.sh
+├── silverbullet/              ← SilverBullet-Skripte + Space-Daten
+│   ├── config.sh              ← SB-eigene Config (SB_DOMAIN, SB_USER)
+│   ├── docker-compose.yml, .env, space/
+│   ├── setup.sh, update.sh, backup.sh
+└── proxy/
+    ├── docker-compose.yml     ← Caddy, verbunden mit beiden App-Netzwerken
+    ├── Caddyfile              ← generiert durch proxy/setup.sh
+    └── setup.sh
+```
+
+**Repo-Dateien:**
+
+| Pfad | Beschreibung |
 |---|---|
-| `setup.sh` | **Einmalig** ausführen – richtet den Server komplett ein |
-| `config.example.sh` | **Vorlage** für die lokale Konfiguration |
-| `config.sh` | **Lokale Konfiguration** – wird nicht ins Repo eingecheckt |
-| `backup_db.sh` | Optionaler manueller PostgreSQL-Dump (Fallback) |
-| `sync_pcloud.sh` | rclone Sync des kompletten Immich-Backup-Verzeichnisses nach pCloud |
-| `check_logs.sh` | Fehler-Scan mit Regex-Klassifizierung und ntfy-Alert nur bei Handlungsbedarf |
-| `sys_report.sh` | Statusbericht via ntfy (sonntags um 03:00 Uhr) |
-| `update.sh` | Immich-Update ohne Downtime-Unterbrechung |
-| `update_os.sh` | `apt upgrade` mit ntfy-Alert bei Reboot-Bedarf (sonntags per Cron) |
+| `setup.sh` | **Einmalig** auf frischem VPS ausführen |
+| `migrate_server.sh` | **Einmalig** auf bestehendem Server – Migration zur neuen Struktur |
+| `config.example.sh` | Vorlage für die gemeinsame Server-Konfiguration |
+| `immich/config.example.sh` | Vorlage für die Immich-eigene Konfiguration |
+| `immich/docker-compose.yml` | Immich-Container (Server, ML, Redis, Postgres) |
+| `immich/backup_db.sh` | Optionaler manueller PostgreSQL-Dump (Fallback) |
+| `immich/sync_pcloud.sh` | rclone Sync des Immich-Backup-Verzeichnisses nach pCloud |
+| `immich/check_logs.sh` | Fehler-Scan mit Regex-Klassifizierung und ntfy-Alert |
+| `immich/sys_report.sh` | Wöchentlicher Statusbericht via ntfy |
+| `immich/update.sh` | Immich-Update ohne Downtime |
+| `immich/update_os.sh` | `apt upgrade` mit ntfy-Alert bei Reboot-Bedarf |
+| `silverbullet/config.example.sh` | Vorlage für die SilverBullet-Konfiguration |
+| `silverbullet/docker-compose.yml` | SilverBullet-Container (1 Container, kein DB) |
+| `silverbullet/setup.sh` | SilverBullet einrichten und Proxy aktualisieren |
+| `silverbullet/update.sh` | SilverBullet-Container aktualisieren |
+| `silverbullet/backup.sh` | Space auf Storage Box sichern |
+| `proxy/docker-compose.yml` | Gemeinsamer Reverse Proxy (Caddy) |
+| `proxy/setup.sh` | Proxy deployen / Caddyfile ohne Downtime neu laden |
 
 ---
 
@@ -51,22 +84,47 @@ RPO/RTO-Zielwerte in diesem Setup:
 - Hetzner Storage Box
 - pCloud-Account
 
-### 2. Skripte und Konfiguration vorbereiten
+### 2. Konfiguration vorbereiten
 
 ```bash
-# Lokale Konfiguration aus der Vorlage erzeugen und anpassen
+# Gemeinsame Server-Config
 cp config.example.sh config.sh
+nano config.sh   # ADMIN_USER, Storage Box eintragen
+
+# Immich-eigene Config
+cp immich/config.example.sh immich/config.sh
+nano immich/config.sh   # IMMICH_DOMAIN eintragen
+
+# SilverBullet-eigene Config
+cp silverbullet/config.example.sh silverbullet/config.sh
+nano silverbullet/config.sh   # SB_DOMAIN, SB_USER eintragen
 ```
 
 ### 3. Setup ausführen
 
 ```bash
-# Skripte auf den Server kopieren
-scp *.sh *.py *.md root@<SERVER_IP>:/opt/immich/
+# Frischer Server: als root direkt nach /opt/ kopieren
+scp -r immich/ silverbullet/ proxy/ setup.sh config.example.sh config.sh \
+    root@<SERVER_IP>:/opt/
 
-# Setup starten (fragt Passwort interaktiv ab)
-chmod +x /opt/immich/setup.sh
-/opt/immich/setup.sh
+# Setup starten (fragt Storage Box Passwort interaktiv ab)
+chmod +x /opt/setup.sh /opt/immich/*.sh /opt/silverbullet/*.sh /opt/proxy/*.sh
+/opt/setup.sh
+```
+
+Bei einer Migration auf einem bereits eingerichteten Server mit normalem Admin-User
+funktioniert `scp ...:/opt/` meist nicht, weil nur `/opt/immich/` diesem User gehört,
+nicht aber `/opt/` selbst. Dann stattdessen:
+
+```bash
+ssh <ADMIN_USER>@<SERVER_IP> 'mkdir -p ~/deploy'
+scp -r immich/ silverbullet/ proxy/ setup.sh config.example.sh migrate_server.sh \
+  <ADMIN_USER>@<SERVER_IP>:~/deploy/
+ssh <ADMIN_USER>@<SERVER_IP>
+# WICHTIG: Die bestehende /opt/immich/config.sh muss für die Migration erhalten bleiben.
+rm -f ~/deploy/immich/config.sh ~/deploy/silverbullet/config.sh
+sudo cp -r ~/deploy/* /opt/
+sudo bash /opt/migrate_server.sh
 ```
 
 Das Skript:
@@ -74,7 +132,7 @@ Das Skript:
 - Konfiguriert die Firewall
 - Mountet die Storage Box via CIFS
 - Legt Split-Storage an: `upload/library/backups/...` auf Storage Box, `thumbs` auf SSD (`/opt/immich/data/thumbs`)
-- Erstellt `.env` und `docker-compose.yml` unter `/opt/immich/`
+- Erstellt `.env` unter `/opt/immich/` (`docker-compose.yml` ist bereits Teil des Repos)
 - Generiert ein `Caddyfile` mit deiner Domain
 - Startet alle Container
 
@@ -103,8 +161,26 @@ Kurz gesagt:
 ### 6. Skripte ausführbar machen
 
 ```bash
-chmod +x /opt/immich/*.sh
+chmod +x /opt/immich/*.sh /opt/silverbullet/*.sh /opt/proxy/*.sh
 ```
+
+---
+
+## SilverBullet einrichten
+
+SilverBullet ist eine selbst gehostete Markdown-Wissensdatenbank (1 Container, kein DB).
+
+```bash
+# SilverBullet-Config auf dem Server anpassen (falls nicht beim scp mitgegeben)
+nano /opt/silverbullet/config.sh
+
+# SilverBullet einrichten (startet Container + aktualisiert Proxy automatisch)
+sudo bash /opt/silverbullet/setup.sh
+```
+
+Nach dem Setup erreichbar unter `https://<SB_DOMAIN>` (Login via SB_USER aus config.sh).
+
+**Space-Backup:** täglich per Cron nach `/mnt/storagebox/silverbullet_space/` (rsync).
 
 ---
 
@@ -217,17 +293,25 @@ crontab -e
 # DB-Backups per Immich nativ planen:
 # Administration -> Settings -> Backup (z.B. alle 6h, passende Retention)
 
+# --- Immich ---
 # Log-Check alle 10 Minuten (ntfy-Alert bei Fehlern)
 */10 * * * * /bin/bash /opt/immich/check_logs.sh
 
 # pCloud-Sync alle 6 Stunden
 20 */6 * * * /bin/bash /opt/immich/sync_pcloud.sh
 
-# Statusbericht nur sonntags um 03:00 Uhr
+# Statusbericht sonntags um 03:00 Uhr
 0 3 * * 0 /bin/bash /opt/immich/sys_report.sh
 
 # OS-Updates sonntags um 04:00 Uhr (ntfy-Alert bei Reboot-Bedarf oder Fehler)
 0 4 * * 0 /bin/bash /opt/immich/update_os.sh >> /var/log/immich/update_os.log 2>&1
+
+# --- SilverBullet ---
+# Space täglich um 04:30 Uhr auf Storage Box sichern
+30 4 * * * /bin/bash /opt/silverbullet/backup.sh >> /var/log/silverbullet/backup.log 2>&1
+
+# SilverBullet-Update sonntags um 02:00 Uhr
+0 2 * * 0 /bin/bash /opt/silverbullet/update.sh >> /var/log/silverbullet/update.log 2>&1
 ```
 
 ---

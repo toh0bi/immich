@@ -4,6 +4,9 @@ set -eo pipefail
 # Konfiguration zentral in config.sh pflegen!
 # shellcheck source=config.sh
 source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
+# Immich-spezifische Werte (IMMICH_DOMAIN, ...)
+# shellcheck source=immich/config.sh
+source "$(dirname "${BASH_SOURCE[0]}")/immich/config.sh"
 
 # Passwort interaktiv abfragen (nicht im Skript speichern!)
 read -rsp "Storage Box Passwort: " STORAGE_BOX_PASS
@@ -143,87 +146,14 @@ else
     echo "# Reverse Proxy" >> .env
     echo "IMMICH_DOMAIN=${IMMICH_DOMAIN}" >> .env
 fi
-# Eine saubere, kombinierte docker-compose.yml schreiben (Immich + Caddy)
-cat << 'EOF' > docker-compose.yml
-# info: https://immich.app/docs/deployment/docker-compose
-
-name: immich
-
-services:
-  immich-server:
-    container_name: immich_server
-    image: ghcr.io/immich-app/immich-server:release
-    depends_on:
-      redis:
-        condition: service_healthy
-      database:
-        condition: service_healthy
-    volumes:
-      - ${UPLOAD_LOCATION}:/usr/src/app/upload
-      - /opt/immich/data/thumbs:/usr/src/app/upload/thumbs
-      - /etc/localtime:/etc/localtime:ro
-    env_file:
-      - .env
-    restart: always
-
-  immich-machine-learning:
-    container_name: immich_machine_learning
-    image: ghcr.io/immich-app/immich-machine-learning:release
-    volumes:
-      - model-cache:/cache
-      - /etc/localtime:/etc/localtime:ro
-    env_file:
-      - .env
-    restart: always
-
-  redis:
-    container_name: immich_redis
-    image: docker.io/redis:6.2-alpine
-    healthcheck:
-      test: redis-cli ping || exit 1
-    restart: always
-
-  database:
-    container_name: immich_postgres
-    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
-    environment:
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_USER: ${DB_USERNAME}
-      POSTGRES_DB: ${DB_DATABASE_NAME}
-      POSTGRES_INITDB_ARGS: '--data-checksums'
-    volumes:
-      - ${DB_DATA_LOCATION}:/var/lib/postgresql/data
-    healthcheck:
-      test: pg_isready --dbname='${DB_DATABASE_NAME}' --username='${DB_USERNAME}' || exit 1
-    restart: always
-
-  caddy:
-    image: caddy:2-alpine
-    container_name: immich_proxy
-    restart: always
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - immich-server
-
-volumes:
-  model-cache:
-  caddy_data:
-  caddy_config:
-EOF
-
-# Caddyfile erzeugen (Domain ist hier direkt eingetragen)
-cat > Caddyfile << EOF
-${IMMICH_DOMAIN} {
-    reverse_proxy immich-server:2283
-}
-EOF
+# docker-compose.yml ist bereits Teil des Repos (immich/docker-compose.yml) und
+# liegt dank "scp -r immich/ ... /opt/" schon an dieser Stelle (/opt/immich/docker-compose.yml).
+# Single Source of Truth: hier wird nichts mehr generiert, nur geprüft.
+if [[ ! -f docker-compose.yml ]]; then
+    echo "FEHLER: /opt/immich/docker-compose.yml nicht gefunden." >&2
+    echo "Bitte zuerst den immich/-Ordner aus dem Repo nach /opt/ kopieren (siehe README.md)." >&2
+    exit 1
+fi
 
 echo "### 7. Immich-Infrastruktur starten ###"
 # Log-Verzeichnis für Wartungsskripte anlegen
@@ -239,6 +169,9 @@ if [[ -d /opt/immich/postgres ]]; then
 fi
 
 docker compose up -d
+
+echo "### 8. Reverse Proxy (Caddy) aufsetzen ###"
+bash "$(dirname "${BASH_SOURCE[0]}")/proxy/setup.sh"
 
 echo "=========================================================="
 echo " Setup erfolgreich!"

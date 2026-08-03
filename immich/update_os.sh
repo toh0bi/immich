@@ -1,6 +1,8 @@
 #!/bin/bash
 set -eo pipefail
 
+# shellcheck source=../config.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../config.sh"
 # shellcheck source=config.sh
 source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
 

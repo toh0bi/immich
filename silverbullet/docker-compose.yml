@@ -1,0 +1,19 @@
+name: silverbullet
+
+services:
+  silverbullet:
+    container_name: silverbullet
+    image: ghcr.io/silverbulletmd/silverbullet:latest
+    restart: always
+    volumes:
+      - ${SB_SPACE_DIR:-/opt/silverbullet/space}:/space
+      - /etc/localtime:/etc/localtime:ro
+    env_file:
+      - .env
+    networks:
+      - silverbullet_net
+
+networks:
+  silverbullet_net:
+    external: true
+    name: silverbullet_net

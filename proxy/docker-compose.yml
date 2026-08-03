@@ -1,0 +1,32 @@
+# Gemeinsamer Reverse Proxy für alle Services auf diesem Server.
+# Muss gestartet werden NACHDEM immich und silverbullet laufen,
+# da die Netzwerke immich_net und silverbullet_net bereits existieren müssen.
+
+name: proxy
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy_proxy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - immich_net
+      - silverbullet_net
+
+networks:
+  immich_net:
+    external: true
+  silverbullet_net:
+    external: true
+
+volumes:
+  caddy_data:
+  caddy_config:

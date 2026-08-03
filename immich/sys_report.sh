@@ -6,6 +6,8 @@
 # Cron-Empfehlung:
 #   0 3 * * 0 /bin/bash /opt/immich/sys_report.sh
 
+# shellcheck source=../config.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../config.sh"
 # shellcheck source=config.sh
 source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
 

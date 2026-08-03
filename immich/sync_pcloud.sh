@@ -1,10 +1,36 @@
 #!/bin/bash
 set -eo pipefail
 
+# Config-Dateien ggf. von CRLF auf LF normalisieren (Windows-Editor-Fall)
+sed -i 's/\r$//' "$(dirname "${BASH_SOURCE[0]}")/../config.sh" "$(dirname "${BASH_SOURCE[0]}")/config.sh"
+
+# shellcheck source=../config.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../config.sh"
 # shellcheck source=config.sh
 source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
 
-mkdir -p "${LOG_DIR}"
+require_nonempty() {
+    local var_name="$1"
+    local var_value="$2"
+    if [[ -z "${var_value//[[:space:]]/}" ]]; then
+        echo "ERROR: ${var_name} ist leer oder nicht gesetzt." >&2
+        exit 2
+    fi
+}
+
+require_nonempty "STORAGEBOX_MOUNT" "${STORAGEBOX_MOUNT:-}"
+require_nonempty "PCLOUD_BACKUP_SOURCE" "${PCLOUD_BACKUP_SOURCE:-}"
+require_nonempty "PCLOUD_BACKUP_CURRENT_REMOTE" "${PCLOUD_BACKUP_CURRENT_REMOTE:-}"
+require_nonempty "PCLOUD_BACKUP_HISTORY_REMOTE" "${PCLOUD_BACKUP_HISTORY_REMOTE:-}"
+require_nonempty "LOG_DIR" "${LOG_DIR:-}"
+require_nonempty "PCLOUD_LOG" "${PCLOUD_LOG:-}"
+
+if ! mkdir -p "${LOG_DIR}" 2>/dev/null; then
+    # Fallback, wenn LOG_DIR (z.B. /var/log/immich) nicht beschreibbar ist.
+    LOG_DIR="/tmp"
+    PCLOUD_LOG="${LOG_DIR}/immich_pcloud_sync.log"
+    mkdir -p "${LOG_DIR}"
+fi
 
 RUN_ID=$(date +%Y%m%d_%H%M%S)
 CURRENT_REMOTE="${PCLOUD_BACKUP_CURRENT_REMOTE}"
@@ -22,12 +48,32 @@ if ! mountpoint -q "${STORAGEBOX_MOUNT}"; then
     exit 1
 fi
 
+if [[ ! -d "${PCLOUD_BACKUP_SOURCE}" ]]; then
+    echo "ERROR: Quelle existiert nicht: ${PCLOUD_BACKUP_SOURCE}" | tee -a "${PCLOUD_LOG}" >&2
+    exit 3
+fi
+
+if ! command -v rclone >/dev/null 2>&1; then
+    echo "ERROR: rclone ist nicht installiert oder nicht im PATH." | tee -a "${PCLOUD_LOG}" >&2
+    exit 127
+fi
+
+if ! rclone listremotes 2>/dev/null | grep -qx 'pcloud:'; then
+    echo "ERROR: rclone remote 'pcloud:' nicht gefunden (aktueller User)." | tee -a "${PCLOUD_LOG}" >&2
+    exit 3
+fi
+
 START_LINE=0
 if [[ -f "${PCLOUD_LOG}" ]]; then
     START_LINE=$(wc -l < "${PCLOUD_LOG}")
 fi
 
 echo "### Start pCloud Sync: $(date) ###" >> "${PCLOUD_LOG}"
+echo "  -> LOG_DIR: ${LOG_DIR}" >> "${PCLOUD_LOG}"
+echo "  -> LOG_FILE: ${PCLOUD_LOG}" >> "${PCLOUD_LOG}"
+echo "  -> SOURCE: ${PCLOUD_BACKUP_SOURCE}" >> "${PCLOUD_LOG}"
+echo "  -> CURRENT_REMOTE: ${CURRENT_REMOTE}" >> "${PCLOUD_LOG}"
+echo "  -> HISTORY_REMOTE: ${HISTORY_BASE_REMOTE}" >> "${PCLOUD_LOG}"
 
 # 1) Komplettes Immich-Backup-Verzeichnis syncen (inkl. backups/).
 #    current spiegelt den aktuellen Stand.
