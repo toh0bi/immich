@@ -41,7 +41,7 @@ RPO/RTO-Zielwerte in diesem Setup:
 │   ├── backup_db.sh, check_logs.sh, sync_pcloud.sh
 │   ├── sys_report.sh, update.sh, update_os.sh
 ├── silverbullet/              ← SilverBullet-Skripte + Space-Daten
-│   ├── config.sh              ← SB-eigene Config (SB_DOMAIN, SB_USER)
+│   ├── config.sh              ← SB-eigene Config (SB_DOMAIN, SB_USER, SB_AUTH_TOKEN)
 │   ├── docker-compose.yml, .env, space/
 │   ├── setup.sh, update.sh, backup.sh
 └── proxy/
@@ -97,7 +97,7 @@ nano immich/config.sh   # IMMICH_DOMAIN eintragen
 
 # SilverBullet-eigene Config
 cp silverbullet/config.example.sh silverbullet/config.sh
-nano silverbullet/config.sh   # SB_DOMAIN, SB_USER eintragen
+nano silverbullet/config.sh   # SB_DOMAIN, SB_USER, optional SB_AUTH_TOKEN eintragen
 ```
 
 ### 3. Setup ausführen

@@ -10,6 +10,8 @@ services:
       - /etc/localtime:/etc/localtime:ro
     env_file:
       - .env
+    environment:
+      SB_AUTH_TOKEN: ${SB_AUTH_TOKEN:-}
     networks:
       - silverbullet_net
 

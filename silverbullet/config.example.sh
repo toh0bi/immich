@@ -11,5 +11,9 @@ SB_DOMAIN="sb.tsued.de"
 # Login-Credentials im Format user:passwort (Single-Space-Modus)
 SB_USER="<user>:<passwort>"
 
+# Optionaler API-Token fuer Bearer-Auth am SilverBullet HTTP-API-Endpunkt
+# (z. B. fuer Webhooks wie Pebble Brain Dump)
+SB_AUTH_TOKEN="<lange-zufaellige-zeichenkette>"
+
 # Pfad zum Space-Verzeichnis (Markdown-Dateien) auf dem Host
 SB_SPACE_DIR="/opt/silverbullet/space"

@@ -42,6 +42,7 @@ echo "### 2. Docker .env erzeugen ###"
 # Dieses .env wird vom Container gelesen (nicht config.sh)
 cat > "${SB_DIR}/.env" << EOF
 SB_USER=${SB_USER}
+SB_AUTH_TOKEN=${SB_AUTH_TOKEN}
 SB_SPACE_DIR=${SB_SPACE_DIR}
 EOF
 chmod 600 "${SB_DIR}/.env"
