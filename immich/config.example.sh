@@ -7,7 +7,8 @@
 # =============================================================
 
 # Domain, unter der Immich erreichbar sein soll
-IMMICH_DOMAIN="<IMMICH_DOMAIN>"
+# Bei Tailscale z. B. <server>.<tailnet>.ts.net (Standard-HTTPS Port 443)
+IMMICH_DOMAIN="mein-server.dein-tailnet.ts.net"
 
 # --- Pfade ---------------------------------------------------
 IMMICH_DIR="/opt/immich"

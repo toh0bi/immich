@@ -12,9 +12,20 @@ CONFIG_SHARED="$(dirname "${BASH_SOURCE[0]}")/../config.sh"
 CONFIG_IMMICH="$(dirname "${BASH_SOURCE[0]}")/../immich/config.sh"
 CONFIG_SB="$(dirname "${BASH_SOURCE[0]}")/../silverbullet/config.sh"
 
-# Falls Config-Dateien mit Windows-Zeilenenden (CRLF) bearbeitet wurden,
-# vor dem source in LF normalisieren.
-sed -i 's/\r$//' "${CONFIG_SHARED}" "${CONFIG_IMMICH}" "${CONFIG_SB}"
+# Fallback: Falls /opt/config.sh nicht existiert, aber /opt/immich/config.sh vorhanden ist
+if [[ ! -f "${CONFIG_SHARED}" ]] && [[ -f "$(dirname "${BASH_SOURCE[0]}")/../immich/config.sh" ]]; then
+    CONFIG_SHARED="$(dirname "${BASH_SOURCE[0]}")/../immich/config.sh"
+fi
+
+for cfg in "${CONFIG_SHARED}" "${CONFIG_IMMICH}" "${CONFIG_SB}"; do
+    if [[ ! -f "${cfg}" ]]; then
+        echo "FEHLER: Konfigurationsdatei nicht gefunden: ${cfg}" >&2
+        echo "Bitte sicherstellen, dass die Datei existiert (siehe README.md)." >&2
+        exit 1
+    fi
+    # Windows CRLF bereinigen, falls vorhanden
+    sed -i 's/\r$//' "${cfg}"
+done
 
 # shellcheck source=../config.sh
 source "${CONFIG_SHARED}"
@@ -53,6 +64,21 @@ docker network create silverbullet_net 2>/dev/null && echo "  -> silverbullet_ne
 echo "### Proxy: Verzeichnis vorbereiten ###"
 mkdir -p "${PROXY_DIR}"
 
+# Tailscale-IP ermitteln, damit Caddy nur an das Tailscale-Interface gebunden wird
+TAILSCALE_IP="$(tailscale ip -4 2>/dev/null || true)"
+if [[ -z "${TAILSCALE_IP}" ]]; then
+    echo "WARNUNG: 'tailscale ip -4' lieferte keine IP. Ist Tailscale installiert und verbunden?" >&2
+    echo "Falle zurück auf 127.0.0.1 (Services nur lokal erreichbar)." >&2
+    TAILSCALE_IP="127.0.0.1"
+else
+    echo "  -> Gefundene Tailscale-IP: ${TAILSCALE_IP}"
+fi
+
+# In .env fuer docker-compose schreiben
+cat > "${PROXY_DIR}/.env" << EOF
+TAILSCALE_IP=${TAILSCALE_IP}
+EOF
+
 # docker-compose.yml ist Teil des Repos (proxy/docker-compose.yml) und liegt dank
 # "scp -r proxy/ ... /opt/" bereits unter ${PROXY_DIR}/docker-compose.yml (Deploy-in-Place).
 # Kein cp nötig (Quelle und Ziel wären nach dem Deploy derselbe Pfad).
@@ -84,23 +110,9 @@ chown -R "${ADMIN_USER}:${ADMIN_USER}" "${PROXY_DIR}"
 echo "### Proxy: Caddy starten (oder neu laden) ###"
 cd "${PROXY_DIR}"
 
-if docker ps -a --format '{{.Names}}' | grep -Fxq caddy_proxy; then
-    if [[ "$(docker inspect -f '{{.State.Running}}' caddy_proxy 2>/dev/null || echo false)" == "true" ]]; then
-        # Caddy läuft bereits → Konfiguration neu laden (kein Neustart nötig)
-        if docker exec caddy_proxy caddy reload --config /etc/caddy/Caddyfile; then
-            echo "  -> Caddy-Konfiguration neu geladen."
-        else
-            echo "  -> Reload fehlgeschlagen, Container wird neu erstellt..."
-            docker compose up -d --force-recreate
-        fi
-    else
-        echo "  -> Caddy-Container existiert, läuft aber nicht stabil. Starte neu..."
-        docker compose up -d --force-recreate
-    fi
-else
-    docker compose up -d
-    echo "  -> Caddy gestartet."
-fi
+# Container neu erstellen, damit geänderte Port-Bindings / Socket-Mounts greifen
+docker compose up -d --force-recreate
+echo "  -> Caddy gestartet/aktualisiert."
 
 if ! docker ps -q -f name=caddy_proxy | grep -q .; then
     echo "FEHLER: Caddy läuft nach dem Start/Reload nicht stabil. Letzte Logs:" >&2

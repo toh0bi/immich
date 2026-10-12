@@ -6,7 +6,8 @@
 # =============================================================
 
 # Domain, unter der SilverBullet erreichbar sein soll
-SB_DOMAIN="sb.tsued.de"
+# Bei Tailscale z. B. <server>.<tailnet>.ts.net:8443
+SB_DOMAIN="mein-server.dein-tailnet.ts.net:8443"
 
 # Login-Credentials im Format user:passwort (Single-Space-Modus)
 SB_USER="<user>:<passwort>"

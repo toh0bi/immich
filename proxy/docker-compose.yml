@@ -10,11 +10,14 @@ services:
     container_name: caddy_proxy
     restart: always
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      # Nur noch an Tailscale-Interface bzw. Tailscale-IP binden, nicht mehr öffentlich 0.0.0.0
+      - "${TAILSCALE_IP:-127.0.0.1}:80:80"
+      - "${TAILSCALE_IP:-127.0.0.1}:443:443"
+      - "${TAILSCALE_IP:-127.0.0.1}:443:443/udp"
+      - "${TAILSCALE_IP:-127.0.0.1}:8443:8443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock:ro
       - caddy_data:/data
       - caddy_config:/config
     networks:

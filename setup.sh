@@ -72,11 +72,21 @@ echo "### 3. Firewall (UFW) einrichten ###"
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow ssh
-ufw allow http
-ufw allow https
+# Tailscale-Schnittstelle erlauben (Ports 80, 443, 8443)
+ufw allow in on tailscale0 to any port 80 proto tcp
+ufw allow in on tailscale0 to any port 443 proto tcp
+ufw allow in on tailscale0 to any port 8443 proto tcp
+# Oeffentliche Web-Ports explizit schliessen (falls vorher aktiv)
+ufw delete allow http 2>/dev/null || true
+ufw delete allow https 2>/dev/null || true
 ufw --force enable
 
-echo "### 4. Docker installieren ###"
+echo "### 4. Docker & Tailscale installieren ###"
+if ! command -v tailscale &> /dev/null; then
+    echo "  -> Installiere Tailscale..."
+    curl -fsSL https://tailscale.com/install.sh | sh
+fi
+
 if ! command -v docker &> /dev/null; then
     curl -fsSL https://get.docker.com | sh
 fi
