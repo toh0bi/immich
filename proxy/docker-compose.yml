@@ -17,7 +17,7 @@ services:
       - "${TAILSCALE_IP:-127.0.0.1}:8443:8443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock:ro
+      - /var/run/tailscale:/var/run/tailscale:ro
       - caddy_data:/data
       - caddy_config:/config
     networks:
